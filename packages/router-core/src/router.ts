@@ -28,6 +28,7 @@ import { isNotFound } from './not-found'
 import { setupScrollRestoration } from './scroll-restoration'
 import { defaultParseSearch, defaultStringifySearch } from './searchParams'
 import { rootRouteId } from './root'
+import { RouteTrie } from './route-trie'
 import { isRedirect, isResolvedRedirect } from './redirect'
 import type { SearchParser, SearchSerializer } from './searchParams'
 import type { AnyRedirect, ResolvedRedirect } from './redirect'
@@ -120,6 +121,26 @@ export interface RouterOptions<
   TRouterHistory extends RouterHistory = RouterHistory,
   TDehydrated extends Record<string, any> = Record<string, any>,
 > extends RouterOptionsExtensions {
+  /**
+   * **Experimental feature**: Enable RouteTrie-based path matching
+   * 
+   * RouteTrie offers O(log n) performance for route matching,
+   * which can improve performance with large numbers of routes.
+   * 
+   * @default false
+   * @experimental
+   */
+  experimental_useRouteTrie?: boolean
+
+  /**
+   * Enable RouteTrie performance monitoring
+   * 
+   * Collects metrics on matching performance when enabled.
+   * 
+   * @default false
+   * @experimental
+   */
+  experimental_routeTrieDebug?: boolean
   /**
    * The history object that will be used to manage the browser history.
    *
@@ -802,6 +823,21 @@ export class RouterCore<
   isServer!: boolean
   pathParamsDecodeCharMap?: Map<string, string>
 
+  // RouteTrie for optimized path matching
+  routeTrie!: RouteTrie
+  
+  // Experimental flag
+  useRouteTrie = false
+
+  // Performance metrics for debug purposes
+  private performanceMetrics = {
+    trieMatchCount: 0,
+    originalMatchCount: 0,
+    trieMatchTime: 0,
+    originalMatchTime: 0,
+    trieEnabled: false
+  }
+
   /**
    * @deprecated Use the `createRouter` function instead
    */
@@ -866,6 +902,15 @@ export class RouterCore<
         )
       : undefined
 
+    // RouteTrie settings update
+    this.useRouteTrie = newOptions.experimental_useRouteTrie ?? false
+    this.performanceMetrics.trieEnabled = this.useRouteTrie
+
+    if (newOptions.experimental_routeTrieDebug && typeof console !== 'undefined') {
+      console.log('RouteTrie Debug Mode enabled')
+      console.log('RouteTrie enabled:', this.useRouteTrie)
+    }
+    
     if (
       !this.basepath ||
       (newOptions.basepath && newOptions.basepath !== previousOptions.basepath)
@@ -933,6 +978,9 @@ export class RouterCore<
   buildRouteTree = () => {
     this.routesById = {} as RoutesById<TRouteTree>
     this.routesByPath = {} as RoutesByPath<TRouteTree>
+    
+    // Initialize RouteTrie
+    this.routeTrie = new RouteTrie()
 
     const notFoundRoute = this.options.notFoundRoute
     if (notFoundRoute) {
@@ -941,6 +989,11 @@ export class RouterCore<
         defaultSsr: this.options.defaultSsr,
       })
       ;(this.routesById as any)[notFoundRoute.id] = notFoundRoute
+      
+      // Add to RouteTrie
+      if (this.useRouteTrie) {
+        this.routeTrie.insert(notFoundRoute)
+      }
     }
 
     const recurseRoutes = (childRoutes: Array<AnyRoute>) => {
@@ -966,6 +1019,11 @@ export class RouterCore<
           ) {
             ;(this.routesByPath as any)[trimmedFullPath] = childRoute
           }
+        }
+        
+        // Add route to RouteTrie
+        if (this.useRouteTrie) {
+          this.routeTrie.insert(childRoute)
         }
 
         const children = childRoute.children
@@ -1450,8 +1508,76 @@ export class RouterCore<
   }
 
   getMatchedRoutes: GetMatchRoutesFn = (next, dest) => {
+    // Performance monitoring
+    if (this.useRouteTrie) {
+      const startTime = performance.now()
+      const result = this.getMatchedRoutesWithTrie(next, dest)
+      const endTime = performance.now()
+      
+      this.performanceMetrics.trieMatchCount++
+      this.performanceMetrics.trieMatchTime += (endTime - startTime)
+      
+      return result
+    } else {
+      const startTime = performance.now()
+      const result = this.getMatchedRoutesOriginal(next, dest)
+      const endTime = performance.now()
+      
+      this.performanceMetrics.originalMatchCount++
+      this.performanceMetrics.originalMatchTime += (endTime - startTime)
+      
+      return result
+    }
+  }
+
+  // RouteTrie-based matching implementation
+  private getMatchedRoutesWithTrie: GetMatchRoutesFn = (next, dest) => {
+    const trimmedPath = trimPathRight(next.pathname)
+    
+    // Handle direct route targeting (original behavior preservation)
+    if (dest?.to !== undefined) {
+      const targetRoute = this.routesByPath[dest.to]
+      if (targetRoute) {
+        const matchedParams = matchPathname(this.basepath, trimmedPath, {
+          to: targetRoute.fullPath,
+          caseSensitive: targetRoute.options.caseSensitive ?? this.options.caseSensitive,
+          fuzzy: true,
+        })
+        
+        if (matchedParams) {
+          return this.buildMatchedRoutesFromFoundRoute(targetRoute, matchedParams)
+        }
+      }
+    }
+
+    // Use RouteTrie for matching
+    const trieResult = this.routeTrie.match(trimmedPath, {
+      basepath: this.basepath,
+      caseSensitive: this.options.caseSensitive
+    })
+    
+    if (trieResult.foundRoute) {
+      return {
+        matchedRoutes: trieResult.matchedRoutes,
+        routeParams: trieResult.routeParams,
+        foundRoute: trieResult.foundRoute
+      }
+    }
+
+    // No match: return root route
+    const rootRoute = (this.routesById as Record<string, AnyRoute>)[rootRouteId]
+    return {
+      matchedRoutes: [rootRoute],
+      routeParams: {},
+      foundRoute: undefined
+    }
+  }
+
+  // Original matching implementation (maintained for fallback)
+  private getMatchedRoutesOriginal: GetMatchRoutesFn = (next, dest) => {
     let routeParams: Record<string, string> = {}
     const trimmedPath = trimPathRight(next.pathname)
+    
     const getMatchedParams = (route: AnyRoute) => {
       const result = matchPathname(this.basepath, trimmedPath, {
         to: route.fullPath,
@@ -1463,10 +1589,15 @@ export class RouterCore<
     }
 
     let foundRoute: AnyRoute | undefined =
-      dest?.to !== undefined ? this.routesByPath[dest.to!] : undefined
+      dest?.to !== undefined ? this.routesByPath[dest.to] : undefined
     if (foundRoute) {
-      routeParams = getMatchedParams(foundRoute)!
-    } else {
+      const matchedParams = getMatchedParams(foundRoute)
+      if (matchedParams) {
+        routeParams = matchedParams
+      }
+    } 
+    
+    if (!foundRoute) {
       foundRoute = this.flatRoutes.find((route) => {
         const matchedParams = getMatchedParams(route)
 
@@ -1479,8 +1610,16 @@ export class RouterCore<
       })
     }
 
+    return this.buildMatchedRoutesFromFoundRoute(foundRoute, routeParams)
+  }
+
+  // Common logic: build parent chain from found route
+  private buildMatchedRoutesFromFoundRoute(
+    foundRoute: AnyRoute | undefined, 
+    routeParams: Record<string, string>
+  ) {
     let routeCursor: AnyRoute =
-      foundRoute || (this.routesById as any)[rootRouteId]
+      foundRoute || (this.routesById as Record<string, AnyRoute>)[rootRouteId]
 
     const matchedRoutes: Array<AnyRoute> = [routeCursor]
 
