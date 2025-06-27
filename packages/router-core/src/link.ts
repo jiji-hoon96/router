@@ -529,7 +529,7 @@ export interface MakeOptionalSearchParams<
   in out TFrom,
   in out TTo,
 > {
-  search?: true | (ParamsReducer<TRouter, 'SEARCH', TFrom, TTo> & {})
+  search?: StrictSearchParamsForRoute<TRouter, TFrom, TTo>
 }
 
 export interface MakeOptionalPathParams<
@@ -570,7 +570,7 @@ export interface MakeRequiredSearchParams<
   in out TFrom,
   in out TTo,
 > {
-  search: MakeRequiredParamsReducer<TRouter, 'SEARCH', TFrom, TTo> & {}
+  search: StrictSearchParamsForRoute<TRouter, TFrom, TTo>
 }
 
 export type IsRequired<
@@ -587,6 +587,15 @@ export type IsRequired<
         : IsRequiredParams<
             ResolveRelativeToParams<TRouter, TParamVariant, TFrom, TTo>
           >
+    : never
+
+export type StrictSearchParamsForRoute<TRouter extends AnyRouter, TFrom, TTo> =
+  ResolveRelativePath<TFrom, TTo> extends infer TPath
+    ? undefined extends TPath
+      ? never
+      : TPath extends CatchAllPaths<TRouter>
+        ? ResolveAllToParams<TRouter, 'SEARCH'>
+        : ResolveRoute<TRouter, TFrom, TTo>['types']['fullSearchSchemaInput']
     : never
 
 export type SearchParamOptions<TRouter extends AnyRouter, TFrom, TTo> =
