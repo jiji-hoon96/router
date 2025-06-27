@@ -529,7 +529,9 @@ export interface MakeOptionalSearchParams<
   in out TFrom,
   in out TTo,
 > {
-  search?: StrictSearchParamsForRoute<TRouter, TFrom, TTo>
+  search?: true | 
+    StrictSearchParamsForRoute<TRouter, TFrom, TTo> | 
+    ((prev: StrictSearchParamsForRoute<TRouter, TFrom, TTo>) => StrictSearchParamsForRoute<TRouter, TFrom, TTo>)
 }
 
 export interface MakeOptionalPathParams<
@@ -570,7 +572,9 @@ export interface MakeRequiredSearchParams<
   in out TFrom,
   in out TTo,
 > {
-  search: StrictSearchParamsForRoute<TRouter, TFrom, TTo>
+  search: true | 
+    StrictSearchParamsForRoute<TRouter, TFrom, TTo> | 
+    ((prev: StrictSearchParamsForRoute<TRouter, TFrom, TTo>) => StrictSearchParamsForRoute<TRouter, TFrom, TTo>)
 }
 
 export type IsRequired<
