@@ -42,6 +42,10 @@ When a TanStack Start application is being deployed, the `target` value in the `
 
 Once you've chosen a deployment target, you can follow the deployment guidelines below to deploy your TanStack Start application to the hosting provider of your choice.
 
+## Basepath Configuration
+
+If you need to deploy your application to a subdirectory (e.g., `https://example.com/my-app`), you'll need to configure a basepath. For detailed configuration instructions, see the [Basepath Configuration](./basepath) guide.
+
 ### Netlify
 
 Set the `target` value to `netlify` in your `vite.config.ts` file.

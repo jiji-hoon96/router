@@ -82,6 +82,10 @@
               "to": "framework/react/path-aliases"
             },
             {
+              "label": "Basepath Configuration",
+              "to": "framework/react/basepath"
+            },
+            {
               "label": "Tailwind CSS Integration",
               "to": "framework/react/tailwind-integration"
             },
@@ -165,6 +169,10 @@
             {
               "label": "Path Aliases",
               "to": "framework/solid/path-aliases"
+            },
+            {
+              "label": "Basepath Configuration",
+              "to": "framework/solid/basepath"
             }
           ]
         }

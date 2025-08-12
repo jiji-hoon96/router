@@ -37,10 +37,23 @@ When a TanStack Start application is being deployed, the `target` value in the T
 - [`vercel`](#vercel): Deploy to Vercel
 - [`cloudflare-pages`](#cloudflare-pages): Deploy to Cloudflare Pages
 - [`node-server`](#nodejs): Deploy to a Node.js server
-- [`bun`](#bun): Deploy to a Bun server
 - ... and more to come!
 
 Once you've chosen a deployment target, you can follow the deployment guidelines below to deploy your TanStack Start application to the hosting provider of your choice.
+
+## Basepath Configuration
+
+If you need to deploy your application to a subdirectory (e.g., `https://example.com/my-app`), you'll need to configure a basepath. For detailed configuration instructions, see the [Basepath Configuration](./basepath) guide.
+
+```ts
+// vite.config.ts
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  plugins: [tanstackStart({ target: 'netlify' })],
+})
+```
 
 ### Netlify
 
